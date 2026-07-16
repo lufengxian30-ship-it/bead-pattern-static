@@ -7,102 +7,144 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="hero">
-        <p class="eyebrow">BEAD PATTERN STUDIO</p>
-        <h1>把图片变成拼豆图纸</h1>
-        <p class="lead">
-          上传图片后，选择规格和颜色档位，自动生成可打印的拼豆图纸、色号统计图和配色表。
-        </p>
-      </header>
-
-      <section class="controls card">
-        <label class="upload" id="dropzone">
-          <input id="imageInput" type="file" accept="image/*" />
-          <span>点击或拖拽上传图片</span>
-          <small>支持 JPG / PNG / WEBP</small>
-        </label>
-
-        <div class="grid">
-          <div>
-            <h2>规格</h2>
-            <div class="segmented" id="sizeSelect">
-              <button class="active" data-size="104">104×104</button>
-              <button data-size="78">78×78</button>
-              <button data-size="52">52×52</button>
-            </div>
-          </div>
-
-          <div>
-            <h2>颜色数量</h2>
-            <div class="segmented colors" id="colorCount">
-              <button data-colors="8">8 色</button>
-              <button class="active" data-colors="12">12 色</button>
-              <button data-colors="16">16 色</button>
-              <button data-colors="24">24 色</button>
-              <button data-colors="32">32 色</button>
-              <button data-colors="48">48 色</button>
-            </div>
-          </div>
+    <main class="app-shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">BEAD PATTERN STUDIO</p>
+          <h1>把图片变成拼豆图纸</h1>
+          <p class="subtitle">
+            上传图片，选择规格和颜色数量，自动生成适合打印和摆豆的网格图纸。
+          </p>
         </div>
-
-        <label class="toggle">
-          <input id="preserveAspect" type="checkbox" checked />
-          <span>保持比例后居中裁切</span>
-        </label>
-
-        <div class="actions">
-          <button id="generateBtn" class="primary">生成图纸</button>
-          <button id="downloadPatternBtn" disabled>下载效果图 PNG</button>
-          <button id="downloadLegendBtn" disabled>下载统计图 PNG</button>
-          <button id="downloadCsvBtn" disabled>下载配色表 CSV</button>
+        <div class="hero-card">
+          <div class="hero-metric">
+            <span>支持规格</span>
+            <strong>104×104 / 78×78 / 52×52</strong>
+          </div>
+          <div class="hero-metric">
+            <span>颜色库</span>
+            <strong>Mard-221 固定色库</strong>
+          </div>
+          <div class="hero-metric">
+            <span>输出</span>
+            <strong>预览 / 下载 / 打印</strong>
+          </div>
         </div>
       </section>
 
-      <section class="preview card">
-        <div class="preview-head">
-          <div>
-            <h2>预览区</h2>
-            <p id="statusText">上传一张图片开始生成。</p>
+      <section class="workspace">
+        <aside class="panel controls">
+          <div class="control-group upload-box" id="dropzone">
+            <label class="upload-label" for="imageInput">上传图片</label>
+            <input id="imageInput" type="file" accept="image/*" />
+            <p class="help">支持 JPG、PNG、WEBP。也可以把图片拖进这里。</p>
           </div>
-          <div class="meta">
-            <span>规格</span><strong id="gridSizeText">104×104</strong>
-            <span>颜色库</span><strong>Mard-221</strong>
-          </div>
-        </div>
 
-        <div class="canvas-grid">
-          <div class="canvas-card">
-            <h3>效果图</h3>
-            <canvas id="patternCanvas" width="1040" height="1040"></canvas>
+          <div class="control-group">
+            <label for="sizeSelect">拼豆规格</label>
+            <div class="segmented three-cols" id="sizeSelect">
+              <button type="button" class="segmented-option active" data-size="104">104×104</button>
+              <button type="button" class="segmented-option" data-size="78">78×78</button>
+              <button type="button" class="segmented-option" data-size="52">52×52</button>
+            </div>
+            <p class="help">固定使用 Mard-221 色库，下面可再选择输出时采用的颜色档位。</p>
           </div>
-          <div class="canvas-card">
-            <h3>统计图</h3>
-            <canvas id="legendCanvas" width="1400" height="1800"></canvas>
+
+          <div class="control-group">
+            <label for="colorCount">颜色数量</label>
+            <div class="segmented palette-select" id="colorCount">
+              <button type="button" class="segmented-option" data-colors="8">8 色</button>
+              <button type="button" class="segmented-option active" data-colors="12">12 色</button>
+              <button type="button" class="segmented-option" data-colors="16">16 色</button>
+              <button type="button" class="segmented-option" data-colors="24">24 色</button>
+              <button type="button" class="segmented-option" data-colors="32">32 色</button>
+              <button type="button" class="segmented-option" data-colors="48">48 色</button>
+            </div>
+            <p class="help">颜色档位会影响最终图纸的简化程度和可视效果。</p>
           </div>
-        </div>
 
-        <div class="info-grid">
-          <article class="card soft">
-            <h3>色号说明</h3>
-            <p>图纸中的每个色块都显示两位编号，方便查找。</p>
-          </article>
-          <article class="card soft">
-            <h3>下载说明</h3>
-            <p>效果图和统计图会分开导出，适合打印和备豆。</p>
-          </article>
-        </div>
+          <div class="control-group">
+            <label>处理方式</label>
+            <div class="toggle-row">
+              <label><input type="checkbox" id="preserveAspect" checked /> 保持比例后居中裁切</label>
+            </div>
+          </div>
 
-        <div id="paletteList" class="palette-list"></div>
+          <div class="actions">
+            <button id="generateBtn" class="primary" type="button">生成图纸</button>
+            <button id="downloadPatternBtn" class="secondary" type="button" disabled>下载效果图 JPG</button>
+            <button id="downloadLegendBtn" class="secondary" type="button" disabled>下载统计图 JPG</button>
+            <button id="printBtn" class="secondary" type="button" disabled>打印</button>
+          </div>
+        </aside>
+
+        <section class="panel preview">
+          <div class="preview-head">
+            <div>
+              <h2>图纸预览</h2>
+              <p id="statusText">上传一张图片开始生成。</p>
+            </div>
+            <div class="stats">
+              <div><span>规格</span><strong id="gridSizeText">104×104</strong></div>
+              <div><span>颜色库</span><strong id="paletteSizeText">Mard-221</strong></div>
+              <div><span>图块</span><strong id="pixelCountText">10816</strong></div>
+            </div>
+          </div>
+
+          <div class="preview-stack">
+            <div class="preview-stage large" id="previewStage">
+              <div class="empty-state" id="emptyState">
+                <div class="empty-icon">⬆</div>
+                <h3>拖入图片或点击上传</h3>
+                <p>系统会自动生成拼豆像素图、色块统计和打印预览。</p>
+              </div>
+              <canvas id="patternCanvas" width="1040" height="1040" aria-label="拼豆效果图画布"></canvas>
+            </div>
+            <div class="preview-stage legend-stage">
+              <canvas id="legendCanvas" width="1400" height="1800" aria-label="拼豆统计图画布"></canvas>
+            </div>
+          </div>
+
+          <div class="result-grid">
+            <article class="result-card">
+              <h3>效果图说明</h3>
+              <ul class="notes">
+                <li>效果图采用更大画布，便于放大查看每个色块。</li>
+                <li>色块中标注两位编号，方便和统计图对照。</li>
+              </ul>
+            </article>
+            <article class="result-card">
+              <h3>统计图说明</h3>
+              <ul class="notes">
+                <li>统计图单独展示色号、HEX 和数量。</li>
+                <li>下载后可直接用于备豆和核对。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="result-grid">
+            <article class="result-card">
+              <h3>颜色分布</h3>
+              <div id="paletteList" class="palette-list"></div>
+            </article>
+            <article class="result-card">
+              <h3>导出说明</h3>
+              <ul class="notes">
+                <li>JPG 图纸包含每个网格的清晰边界。</li>
+                <li>打印时会自动切换为浅色纸张版式。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
       </section>
     </main>
 
     <template id="paletteItemTemplate">
       <div class="palette-item">
         <span class="swatch"></span>
-        <div>
+        <div class="palette-meta">
           <strong class="palette-hex"></strong>
-          <div class="palette-count"></div>
+          <span class="palette-count"></span>
         </div>
       </div>
     </template>

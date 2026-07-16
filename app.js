@@ -6,30 +6,36 @@ const preserveAspect = document.getElementById("preserveAspect");
 const generateBtn = document.getElementById("generateBtn");
 const downloadPatternBtn = document.getElementById("downloadPatternBtn");
 const downloadLegendBtn = document.getElementById("downloadLegendBtn");
-const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+const printBtn = document.getElementById("printBtn");
 const patternCanvas = document.getElementById("patternCanvas");
 const legendCanvas = document.getElementById("legendCanvas");
+const emptyState = document.getElementById("emptyState");
 const paletteList = document.getElementById("paletteList");
 const statusText = document.getElementById("statusText");
 const gridSizeText = document.getElementById("gridSizeText");
+const paletteSizeText = document.getElementById("paletteSizeText");
+const pixelCountText = document.getElementById("pixelCountText");
 const paletteItemTemplate = document.getElementById("paletteItemTemplate");
 
 const patternCtx = patternCanvas.getContext("2d");
 const legendCtx = legendCanvas.getContext("2d");
-const sizes = new Set([104, 78, 52]);
+const gridSizes = new Set([104, 78, 52]);
 const paletteOptions = [8, 12, 16, 24, 32, 48];
-const fixedPaletteName = "Mard-221";
+const FIXED_PALETTE_NAME = "Mard-221";
 
 const state = {
   image: null,
   gridSize: 104,
   colorCount: 12,
   palette: [],
-  pixels: [],
+  pixelData: [],
 };
 
 function rgbToHex(r, g, b) {
-  return [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return [r, g, b]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
 }
 
 function hexToRgb(hex) {
@@ -49,13 +55,20 @@ function luminance(color) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-function makeLabel(index) {
+function makeCompactLabel(index) {
   const letter = String.fromCharCode(65 + Math.floor(index / 100));
   const digits = String((index % 100) + 1).padStart(2, "0");
   return `${letter}${digits}`;
 }
 
-function loadImage(file) {
+function distance(a, b) {
+  const dr = a.r - b.r;
+  const dg = a.g - b.g;
+  const db = a.b - b.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();
@@ -71,96 +84,114 @@ function loadImage(file) {
   });
 }
 
-function offscreen(width, height) {
+function createOffscreenCanvas(width, height) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   return canvas;
 }
 
-function extractPixels(image, size, keepAspect) {
-  const canvas = offscreen(size, size);
-  const ctx = canvas.getContext("2d");
+function extractScaledPixels(image, size, keepAspect) {
+  const source = createOffscreenCanvas(size, size);
+  const sourceCtx = source.getContext("2d");
+  sourceCtx.clearRect(0, 0, size, size);
+
   if (keepAspect) {
     const scale = Math.max(size / image.width, size / image.height);
-    const w = image.width * scale;
-    const h = image.height * scale;
-    const x = (size - w) / 2;
-    const y = (size - h) / 2;
-    ctx.drawImage(image, x, y, w, h);
+    const drawWidth = image.width * scale;
+    const drawHeight = image.height * scale;
+    const offsetX = (size - drawWidth) / 2;
+    const offsetY = (size - drawHeight) / 2;
+    sourceCtx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
   } else {
-    ctx.drawImage(image, 0, 0, size, size);
+    sourceCtx.drawImage(image, 0, 0, size, size);
   }
-  const data = ctx.getImageData(0, 0, size, size).data;
+
+  const { data } = sourceCtx.getImageData(0, 0, size, size);
   const pixels = [];
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const idx = (y * size + x) * 4;
-      pixels.push({ r: data[idx], g: data[idx + 1], b: data[idx + 2], a: data[idx + 3] });
+      pixels.push({
+        r: data[idx],
+        g: data[idx + 1],
+        b: data[idx + 2],
+        a: data[idx + 3],
+      });
     }
   }
   return pixels;
 }
 
-function distance(a, b) {
-  const dr = a.r - b.r;
-  const dg = a.g - b.g;
-  const db = a.b - b.b;
-  return dr * dr + dg * dg + db * db;
-}
-
 function buildPalette(pixels, count) {
-  const samples = pixels.filter((p) => p.a > 0);
-  if (!samples.length) return [{ hex: "#FFFFFF", r: 255, g: 255, b: 255, label: "A01" }];
+  const samples = pixels.filter((pixel) => pixel.a > 0);
+  if (!samples.length) {
+    return [{ hex: "#FFFFFF", r: 255, g: 255, b: 255 }];
+  }
 
   const centroids = [];
+  const seeded = new Set();
   const step = Math.max(1, Math.floor(samples.length / count));
+
   for (let i = 0; i < samples.length && centroids.length < count; i += step) {
-    centroids.push({ r: samples[i].r, g: samples[i].g, b: samples[i].b });
+    const sample = samples[i];
+    const key = `${sample.r}-${sample.g}-${sample.b}`;
+    if (!seeded.has(key)) {
+      seeded.add(key);
+      centroids.push({ r: sample.r, g: sample.g, b: sample.b });
+    }
   }
+
   while (centroids.length < count) {
     const sample = samples[Math.floor(Math.random() * samples.length)];
     centroids.push({ r: sample.r, g: sample.g, b: sample.b });
   }
 
-  for (let iter = 0; iter < 6; iter += 1) {
+  for (let iteration = 0; iteration < 8; iteration += 1) {
     const clusters = centroids.map(() => []);
+
     for (const sample of samples) {
       let bestIndex = 0;
       let bestDistance = Infinity;
+
       centroids.forEach((centroid, index) => {
-        const d = distance(sample, centroid);
-        if (d < bestDistance) {
-          bestDistance = d;
+        const current = distance(sample, centroid);
+        if (current < bestDistance) {
+          bestDistance = current;
           bestIndex = index;
         }
       });
+
       clusters[bestIndex].push(sample);
     }
+
     centroids.forEach((centroid, index) => {
       const cluster = clusters[index];
       if (!cluster.length) return;
-      const total = cluster.reduce(
-        (acc, p) => {
-          acc.r += p.r;
-          acc.g += p.g;
-          acc.b += p.b;
+
+      const totals = cluster.reduce(
+        (acc, pixel) => {
+          acc.r += pixel.r;
+          acc.g += pixel.g;
+          acc.b += pixel.b;
           return acc;
         },
         { r: 0, g: 0, b: 0 }
       );
-      centroid.r = Math.round(total.r / cluster.length);
-      centroid.g = Math.round(total.g / cluster.length);
-      centroid.b = Math.round(total.b / cluster.length);
+
+      centroid.r = Math.round(totals.r / cluster.length);
+      centroid.g = Math.round(totals.g / cluster.length);
+      centroid.b = Math.round(totals.b / cluster.length);
     });
   }
 
-  return centroids.map((c, index) => ({
-    label: makeLabel(index),
-    hex: `#${rgbToHex(c.r, c.g, c.b)}`,
-    r: c.r,
-    g: c.g,
-    b: c.b,
+  return centroids.map((color, index) => ({
+    id: index + 1,
+    label: makeCompactLabel(index),
+    hex: `#${rgbToHex(color.r, color.g, color.b)}`,
+    r: color.r,
+    g: color.g,
+    b: color.b,
   }));
 }
 
@@ -170,9 +201,9 @@ function assignPalette(pixels, palette) {
     let best = palette[0];
     let bestDistance = Infinity;
     palette.forEach((color) => {
-      const d = distance(pixel, color);
-      if (d < bestDistance) {
-        bestDistance = d;
+      const current = distance(pixel, color);
+      if (current < bestDistance) {
+        bestDistance = current;
         best = color;
       }
     });
@@ -180,40 +211,50 @@ function assignPalette(pixels, palette) {
   });
 }
 
-function drawGrid(ctx, canvas, size, pixels, drawLabels = true) {
+function drawGrid(renderCtx, canvas, size, pixels, options = {}) {
+  const { drawLabels = true } = options;
   const scale = canvas.width / size;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.imageSmoothingEnabled = false;
+
+  renderCtx.clearRect(0, 0, canvas.width, canvas.height);
+  renderCtx.imageSmoothingEnabled = false;
+
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const color = pixels[y * size + x];
-      ctx.fillStyle = color.hex;
-      ctx.fillRect(Math.round(x * scale), Math.round(y * scale), Math.ceil(scale), Math.ceil(scale));
+      renderCtx.fillStyle = color.hex;
+      renderCtx.fillRect(
+        Math.round(x * scale),
+        Math.round(y * scale),
+        Math.ceil(scale),
+        Math.ceil(scale)
+      );
     }
   }
-  ctx.strokeStyle = "rgba(20,28,32,0.18)";
-  ctx.lineWidth = 1;
+
+  renderCtx.strokeStyle = "rgba(20, 28, 32, 0.18)";
+  renderCtx.lineWidth = 1;
   for (let i = 0; i <= size; i += 1) {
     const pos = Math.round(i * scale) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(pos, 0);
-    ctx.lineTo(pos, canvas.height);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, pos);
-    ctx.lineTo(canvas.width, pos);
-    ctx.stroke();
+    renderCtx.beginPath();
+    renderCtx.moveTo(pos, 0);
+    renderCtx.lineTo(pos, canvas.height);
+    renderCtx.stroke();
+    renderCtx.beginPath();
+    renderCtx.moveTo(0, pos);
+    renderCtx.lineTo(canvas.width, pos);
+    renderCtx.stroke();
   }
+
   if (drawLabels) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `${Math.max(6, Math.floor(scale * 0.34))}px Arial`;
+    renderCtx.textAlign = "center";
+    renderCtx.textBaseline = "middle";
+    renderCtx.font = `${Math.max(6, Math.floor(scale * 0.34))}px Arial`;
     for (let y = 0; y < size; y += 1) {
       for (let x = 0; x < size; x += 1) {
         const color = pixels[y * size + x];
         const rgb = hexToRgb(color.hex);
-        ctx.fillStyle = luminance(rgb) > 0.55 ? "#111827" : "#FFFFFF";
-        ctx.fillText(color.label, (x + 0.5) * scale, (y + 0.5) * scale);
+        renderCtx.fillStyle = luminance(rgb) > 0.55 ? "#111827" : "#FFFFFF";
+        renderCtx.fillText(color.label, (x + 0.5) * scale, (y + 0.5) * scale);
       }
     }
   }
@@ -222,195 +263,267 @@ function drawGrid(ctx, canvas, size, pixels, drawLabels = true) {
 function renderPalette(palette, pixels) {
   paletteList.innerHTML = "";
   const counts = new Map();
-  pixels.forEach((pixel) => counts.set(pixel.label, (counts.get(pixel.label) ?? 0) + 1));
+
+  pixels.forEach((pixel) => {
+    counts.set(pixel.label, (counts.get(pixel.label) ?? 0) + 1);
+  });
+
   palette.forEach((color) => {
     const node = paletteItemTemplate.content.firstElementChild.cloneNode(true);
     node.querySelector(".swatch").style.background = color.hex;
     node.querySelector(".palette-hex").textContent = `${color.label} ${color.hex}`;
-    node.querySelector(".palette-count").textContent = `${counts.get(color.label) ?? 0} 个像素`;
+    const count = counts.get(color.label) ?? 0;
+    node.querySelector(".palette-count").textContent = `${count} 个像素`;
     paletteList.appendChild(node);
   });
-}
-
-function setReady(ready) {
-  downloadPatternBtn.disabled = !ready;
-  downloadLegendBtn.disabled = !ready;
-  downloadCsvBtn.disabled = !ready;
 }
 
 function updateStatus(message) {
   statusText.textContent = message;
 }
 
-function refreshSizeButtons(group, value, key) {
-  group.querySelectorAll("button").forEach((button) => {
-    button.classList.toggle("active", Number(button.dataset[key]) === value);
+function setReady(isReady) {
+  downloadPatternBtn.disabled = !isReady;
+  downloadLegendBtn.disabled = !isReady;
+  printBtn.disabled = !isReady;
+  emptyState.classList.toggle("hide", isReady);
+}
+
+function updateUiValues() {
+  gridSizeText.textContent = `${state.gridSize}×${state.gridSize}`;
+  paletteSizeText.textContent = FIXED_PALETTE_NAME;
+  pixelCountText.textContent = `${state.gridSize * state.gridSize}`;
+}
+
+function refreshActiveButtonGroup(group, value, attrName) {
+  group.querySelectorAll(".segmented-option").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset[attrName]) === value);
   });
 }
 
-function buildLegendCanvas() {
-  const items = state.palette.map((color) => ({
-    ...color,
-    count: state.pixels.filter((p) => p.label === color.label).length,
-  }));
+function buildFooterLines() {
+  const counts = new Map();
+  state.pixelData.forEach((pixel) => {
+    counts.set(pixel.label, (counts.get(pixel.label) ?? 0) + 1);
+  });
 
+  return state.palette.map((color) => ({
+    ...color,
+    count: counts.get(color.label) ?? 0,
+  }));
+}
+
+function renderPatternCanvas(targetCanvas, pixels) {
+  const scale = state.gridSize === 104 ? 18 : state.gridSize === 78 ? 20 : 24;
+  targetCanvas.width = state.gridSize * scale;
+  targetCanvas.height = state.gridSize * scale;
+  const targetCtx = targetCanvas.getContext("2d");
+  drawGrid(targetCtx, targetCanvas, state.gridSize, pixels, { drawLabels: true });
+}
+
+function buildPatternExportCanvas() {
+  const scale = state.gridSize === 104 ? 24 : state.gridSize === 78 ? 28 : 32;
+  const gridCanvas = createOffscreenCanvas(state.gridSize * scale, state.gridSize * scale);
+  const gridCtx = gridCanvas.getContext("2d");
+  drawGrid(gridCtx, gridCanvas, state.gridSize, state.pixelData, { drawLabels: true });
+
+  const exportCanvas = createOffscreenCanvas(gridCanvas.width + 120, gridCanvas.height + 180);
+  const exportCtx = exportCanvas.getContext("2d");
+
+  exportCtx.fillStyle = "#ffffff";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  exportCtx.fillStyle = "#111111";
+  exportCtx.font = "bold 32px Arial";
+  exportCtx.fillText("效果图", 60, 54);
+  exportCtx.font = "18px Arial";
+  exportCtx.fillText(
+    `尺寸：${state.gridSize}×${state.gridSize}  |  色库：${FIXED_PALETTE_NAME}  |  颜色档位：${state.colorCount} 色`,
+    60,
+    88
+  );
+
+  exportCtx.drawImage(gridCanvas, 60, 120);
+  return exportCanvas;
+}
+
+function buildLegendExportCanvas() {
+  const footerItems = buildFooterLines();
   const columns = state.gridSize === 104 ? 6 : 5;
-  const rows = Math.ceil(items.length / columns);
+  const rows = Math.ceil(footerItems.length / columns);
   const cardWidth = 180;
   const cardHeight = 78;
   const gapX = 18;
   const gapY = 18;
   const marginX = 48;
   const marginTop = 120;
+  const marginBottom = 60;
   const canvasWidth = marginX * 2 + columns * cardWidth + (columns - 1) * gapX;
-  const canvasHeight = marginTop + rows * cardHeight + (rows - 1) * gapY + 90;
-  const canvas = offscreen(canvasWidth, canvasHeight);
-  const ctx = canvas.getContext("2d");
+  const canvasHeight = marginTop + rows * cardHeight + (rows - 1) * gapY + marginBottom + 90;
+  const exportCanvas = createOffscreenCanvas(canvasWidth, canvasHeight);
+  const exportCtx = exportCanvas.getContext("2d");
 
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-  ctx.fillStyle = "#111";
-  ctx.font = "bold 32px Arial";
-  ctx.fillText("色号统计图", 48, 54);
-  ctx.font = "18px Arial";
-  ctx.fillText(`尺寸：${state.gridSize}×${state.gridSize}  |  色库：${fixedPaletteName}  |  颜色档位：${state.colorCount} 色`, 48, 88);
+  exportCtx.fillStyle = "#ffffff";
+  exportCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+  exportCtx.fillStyle = "#111111";
+  exportCtx.font = "bold 32px Arial";
+  exportCtx.fillText("色号统计图", 48, 54);
+  exportCtx.font = "18px Arial";
+  exportCtx.fillText(
+    `尺寸：${state.gridSize}×${state.gridSize}  |  色库：${FIXED_PALETTE_NAME}  |  颜色档位：${state.colorCount} 色`,
+    48,
+    88
+  );
 
-  items.forEach((item, index) => {
-    const col = index % columns;
+  footerItems.forEach((item, index) => {
+    const column = index % columns;
     const row = Math.floor(index / columns);
-    const x = marginX + col * (cardWidth + gapX);
+    const x = marginX + column * (cardWidth + gapX);
     const y = marginTop + row * (cardHeight + gapY);
-    ctx.fillStyle = item.hex;
-    ctx.fillRect(x, y, cardWidth, cardHeight);
-    ctx.strokeStyle = "rgba(0,0,0,0.15)";
-    ctx.strokeRect(x + 0.5, y + 0.5, cardWidth - 1, cardHeight - 1);
+
+    exportCtx.fillStyle = item.hex;
+    exportCtx.fillRect(x, y, cardWidth, cardHeight);
+    exportCtx.strokeStyle = "rgba(0,0,0,0.15)";
+    exportCtx.strokeRect(x + 0.5, y + 0.5, cardWidth - 1, cardHeight - 1);
+
     const rgb = hexToRgb(item.hex);
-    ctx.fillStyle = luminance(rgb) > 0.55 ? "#111" : "#fff";
-    ctx.font = "bold 20px Arial";
-    ctx.fillText(item.label, x + 12, y + 28);
-    ctx.font = "16px Arial";
-    ctx.fillText(item.hex, x + 12, y + 50);
+    exportCtx.fillStyle = luminance(rgb) > 0.55 ? "#111111" : "#FFFFFF";
+    exportCtx.font = "bold 20px Arial";
+    exportCtx.fillText(item.label, x + 12, y + 28);
+    exportCtx.font = "16px Arial";
+    exportCtx.fillText(item.hex, x + 12, y + 50);
     const countText = `${item.count} 颗`;
-    ctx.fillText(countText, x + cardWidth - 12 - ctx.measureText(countText).width, y + 50);
+    exportCtx.fillText(countText, x + cardWidth - 12 - exportCtx.measureText(countText).width, y + 50);
   });
 
-  legendCanvas.width = canvas.width;
-  legendCanvas.height = canvas.height;
-  legendCtx.clearRect(0, 0, legendCanvas.width, legendCanvas.height);
-  legendCtx.drawImage(canvas, 0, 0);
+  return exportCanvas;
 }
 
-function buildPatternExportCanvas() {
-  const scale = state.gridSize === 104 ? 24 : state.gridSize === 78 ? 28 : 32;
-  const canvas = offscreen(state.gridSize * scale, state.gridSize * scale);
-  const ctx = canvas.getContext("2d");
-  drawGrid(ctx, canvas, state.gridSize, state.pixels, true);
-  return canvas;
-}
-
-function exportCSV() {
-  const counts = new Map();
-  state.pixels.forEach((pixel) => counts.set(pixel.label, (counts.get(pixel.label) ?? 0) + 1));
-  const rows = ["label,hex,count,r,g,b"];
-  state.palette.forEach((color) => {
-    rows.push([color.label, color.hex, counts.get(color.label) ?? 0, color.r, color.g, color.b].join(","));
-  });
-  const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `bead-pattern-${state.gridSize}.csv`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function downloadCanvas(canvas, filename) {
-  const a = document.createElement("a");
-  a.href = canvas.toDataURL("image/png");
-  a.download = filename;
-  a.click();
-}
-
-function generate() {
+async function generatePattern() {
   if (!state.image) {
     updateStatus("请先上传图片。");
     setReady(false);
     return;
   }
+
   updateStatus("正在生成图纸...");
-  const pixels = extractPixels(state.image, state.gridSize, preserveAspect.checked);
+  const pixels = extractScaledPixels(state.image, state.gridSize, preserveAspect.checked);
   const palette = buildPalette(pixels, state.colorCount);
   const assigned = assignPalette(pixels, palette);
-  state.palette = palette;
-  state.pixels = assigned;
 
-  const patternScale = state.gridSize === 104 ? 18 : state.gridSize === 78 ? 20 : 24;
-  patternCanvas.width = state.gridSize * patternScale;
-  patternCanvas.height = state.gridSize * patternScale;
-  drawGrid(patternCtx, patternCanvas, state.gridSize, assigned, true);
-  buildLegendCanvas();
+  state.palette = palette;
+  state.pixelData = assigned;
+
+  renderPatternCanvas(patternCanvas, assigned);
+
+  const legend = buildLegendExportCanvas();
+  legendCanvas.width = legend.width;
+  legendCanvas.height = legend.height;
+  legendCtx.clearRect(0, 0, legendCanvas.width, legendCanvas.height);
+  legendCtx.drawImage(legend, 0, 0);
+
   renderPalette(palette, assigned);
-  gridSizeText.textContent = `${state.gridSize}×${state.gridSize}`;
-  updateStatus(`已生成 ${state.gridSize}×${state.gridSize} 图纸，固定色库：${fixedPaletteName}。`);
+  updateUiValues();
+  updateStatus(`已生成 ${state.gridSize}×${state.gridSize} 图纸，固定色库：${FIXED_PALETTE_NAME}。`);
   setReady(true);
+}
+
+function downloadDataUrl(dataUrl, filename) {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = filename;
+  link.click();
+}
+
+function canvasToJpegDataUrl(canvas) {
+  const output = createOffscreenCanvas(canvas.width, canvas.height);
+  const ctx = output.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, output.width, output.height);
+  ctx.drawImage(canvas, 0, 0);
+  return output.toDataURL("image/jpeg", 0.95);
+}
+
+function exportPatternJpg() {
+  const exportCanvas = buildPatternExportCanvas();
+  downloadDataUrl(canvasToJpegDataUrl(exportCanvas), `bead-pattern-${state.gridSize}.jpg`);
+}
+
+function exportLegendJpg() {
+  const exportCanvas = buildLegendExportCanvas();
+  downloadDataUrl(canvasToJpegDataUrl(exportCanvas), `bead-legend-${state.gridSize}.jpg`);
+}
+
+function attachImage(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    updateStatus("请选择有效的图片文件。");
+    return;
+  }
+  loadImageFromFile(file)
+    .then((image) => {
+      state.image = image;
+      updateStatus(`已载入 ${file.name}，点击生成图纸。`);
+      generatePattern();
+    })
+    .catch((error) => {
+      updateStatus(error.message);
+      setReady(false);
+    });
 }
 
 imageInput.addEventListener("change", (event) => {
   const [file] = event.target.files;
-  if (!file) return;
-  loadImage(file)
-    .then((image) => {
-      state.image = image;
-      updateStatus(`已载入 ${file.name}，点击生成图纸。`);
-      generate();
-    })
-    .catch((err) => updateStatus(err.message));
-});
-
-dropzone.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  dropzone.classList.add("drag");
-});
-
-dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
-
-dropzone.addEventListener("drop", (event) => {
-  event.preventDefault();
-  dropzone.classList.remove("drag");
-  const [file] = event.dataTransfer.files;
-  if (!file) return;
-  loadImage(file)
-    .then((image) => {
-      state.image = image;
-      updateStatus(`已载入 ${file.name}，点击生成图纸。`);
-      generate();
-    })
-    .catch((err) => updateStatus(err.message));
+  attachImage(file);
 });
 
 sizeSelect.addEventListener("click", (event) => {
-  const button = event.target.closest("button");
+  const button = event.target.closest(".segmented-option");
   if (!button) return;
-  const size = Number(button.dataset.size);
-  if (!sizes.has(size)) return;
-  state.gridSize = size;
-  refreshSizeButtons(sizeSelect, size, "size");
-  if (state.image) generate();
+  const value = Number(button.dataset.size);
+  if (!gridSizes.has(value)) return;
+  state.gridSize = value;
+  refreshActiveButtonGroup(sizeSelect, value, "size");
+  updateUiValues();
+  if (state.image) generatePattern();
 });
 
 colorCountSelect.addEventListener("click", (event) => {
-  const button = event.target.closest("button");
+  const button = event.target.closest(".segmented-option");
   if (!button) return;
-  const count = Number(button.dataset.colors);
-  if (!paletteOptions.includes(count)) return;
-  state.colorCount = count;
-  refreshSizeButtons(colorCountSelect, count, "colors");
-  if (state.image) generate();
+  const value = Number(button.dataset.colors);
+  if (!paletteOptions.includes(value)) return;
+  state.colorCount = value;
+  refreshActiveButtonGroup(colorCountSelect, value, "colors");
+  if (state.image) generatePattern();
 });
 
-generateBtn.addEventListener("click", generate);
-downloadPatternBtn.addEventListener("click", () => downloadCanvas(buildPatternExportCanvas(), `bead-pattern-${state.gridSize}.png`));
-downloadLegendBtn.addEventListener("click", () => downloadCanvas(buildLegendCanvas(), `bead-legend-${state.gridSize}.png`));
-downloadCsvBtn.addEventListener("click", exportCSV);
+preserveAspect.addEventListener("change", () => {
+  if (state.image) generatePattern();
+});
 
+generateBtn.addEventListener("click", generatePattern);
+downloadPatternBtn.addEventListener("click", exportPatternJpg);
+downloadLegendBtn.addEventListener("click", exportLegendJpg);
+printBtn.addEventListener("click", () => window.print());
+
+["dragenter", "dragover"].forEach((eventName) => {
+  dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+});
+
+["dragleave", "drop"].forEach((eventName) => {
+  dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+  });
+});
+
+dropzone.addEventListener("drop", (event) => {
+  const [file] = event.dataTransfer.files;
+  attachImage(file);
+});
+
+updateUiValues();
 setReady(false);
+updateStatus("上传一张图片开始生成。");
