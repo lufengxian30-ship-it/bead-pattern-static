@@ -23,6 +23,30 @@ const gridSizes = new Set([104, 78, 52]);
 const paletteOptions = [8, 12, 16, 24, 32, 48];
 const FIXED_PALETTE_NAME = "Mard-221";
 
+const MARD_221_SERIES = {
+  A: "A1#FAF4C8A2#FFFFD5A3#FEFF8BA4#FBED56A5#F4D738A6#FEAC4CA7#FE8B4CA8#FFDA45A9#FF995BA10#F77C31A11#FFDD99A12#FE9F72A13#FFC365A14#FD543DA15#FFF365A16#FFFF9FA17#FFE36EA18#FEBE7DA19#FD7C72A20#FFD568A21#FFE395A22#F4F57DA23#E6C9B7A24#F7F8A2A25#FFD67DA26#FFC830",
+  B: "B1#E6EE31B2#63F347B3#9EF780B4#5DE035B5#35E352B6#65E2A6B7#3DAF80B8#1C9C4FB9#27523AB10#95D3C2B11#5D722AB12#166F41B13#CAEB7BB14#ADE946B15#2E5132B16#C5ED9CB17#9BB13AB18#E6EE49B19#24B88CB20#C2F0CCB21#156A6BB22#0B3C43B23#303A21B24#EEFCA5B25#4E846DB26#8D7A35B27#CCE1AFB28#9EE5B9B29#C5E254B30#E2FCB1B31#B0E792B32#9CAB5A",
+  C: "C1#E8FFE7C2#A9F9FCC3#A0E2FBC4#41CCFFC5#01ACEBC6#50AAF0C7#3677D2C8#0F54C0C9#324BCAC10#3EBCE2C11#28DDDEC12#1C334DC13#CDE8FFC14#D5FDFFC15#22C4C6C16#1557A8C17#04D1F6C18#1D3344C19#1887A2C20#176DAFC21#BEDDFFC22#67B4BEC23#C8E2FFC24#7CC4FFC25#A9E5E5C26#3CAED8C27#D3DFFAC28#BBCFEDC29#34488E",
+  D: "D1#AEB4F2D2#858EDDD3#2F54AFD4#182A84D5#B843C5D6#AC7BDED7#8854B3D8#E2D3FFD9#D5B9F8D10#361851D11#B9BAE1D12#DE9AD4D13#B90095D14#8B279BD15#2F1F90D16#E3E1EED17#C4D4F6D18#A45EC7D19#D8C3D7D20#9C32B2D21#9A009BD22#333A95D23#EBDAFCD24#7786E5D25#494FC7D26#DFC2F8",
+  E: "E1#FDD3CCE2#FEC0DFE3#FFB7E7E4#E8649EE5#F551A2E6#F13D74E7#C63478E8#FFDBE9E9#E970CCE10#D33793E11#FCDDD2E12#F78FC3E13#B5006DE14#FFD1BAE15#F8C7C9E16#FFF3EBE17#FFE2EAE18#FFC7DBE19#FEBAD5E20#D8C7D1E21#BD9DA1E22#B785A1E23#937A8DE24#E1BCE8",
+  F: "F1#FD957BF2#FC3D46F3#F74941F4#FC283CF5#E7002FF6#943630F7#971937F8#BC0028F9#E2677AF10#8A4526F11#5A2121F12#FD4E6AF13#F35744F14#FFA9ADF15#D30022F16#FEC2A6F17#E69C79F18#D37C46F19#C1444AF20#CD9391F21#F7B4C6F22#FDC0D0F23#F67E66F24#E698AAF25#E54B4F",
+  G: "G1#FFE2CEG2#FFC4AAG3#F4C3A5G4#E1B383G5#EDB045G6#E99C17G7#9D5B3EG8#753832G9#E6B483G10#D98C39G11#E0C593G12#FFC890G13#B7714AG14#8D614CG15#FCF9E0G16#F2D9BAG17#78524BG18#FFE4CCG19#E07935G20#A94023G21#B88558",
+  H: "H1#FDFBFFH2#FEFFFFH3#B6B1BAH4#89858CH5#48464EH6#2F2B2FH7#000000H8#E7D6DBH9#EDEDEDH10#EEE9EAH11#CECDD5H12#FFF5EDH13#F5ECD2H14#CFD7D3H15#98A6A8H16#1D1414H17#F1EDEDH18#FFFDF0H19#F6EFE2H20#949FA3H21#FFFBE1H22#CACAD4H23#9A9D94",
+  M: "M1#BCC6B8M2#8AA386M3#697D80M4#E3D2BCM5#D0CCAAM6#B0A782M7#B4A497M8#B38281M9#A58767M10#C5B2BCM11#9F7594M12#644749M13#D19066M14#C77362M15#757D78",
+};
+
+const MARD_221_PALETTE = Object.values(MARD_221_SERIES)
+  .flatMap((series) =>
+    [...series.matchAll(/([A-Z]\d{1,2})#([0-9A-F]{6})/g)].map((match) => ({
+      label: match[1],
+      hex: `#${match[2]}`,
+    }))
+  )
+  .reduce((list, color) => {
+    if (!list.some((entry) => entry.label === color.label)) list.push(color);
+    return list;
+  }, []);
+
 const state = {
   image: null,
   gridSize: 104,
@@ -56,8 +80,9 @@ function luminance(color) {
 }
 
 function makeCompactLabel(index) {
-  const letter = String.fromCharCode(65 + Math.floor(index / 100));
-  const digits = String((index % 100) + 1).padStart(2, "0");
+  const letters = "ABCDEFGHIJKLM";
+  const letter = letters[index % letters.length];
+  const digits = String(Math.floor(index / letters.length) + 1).padStart(2, "0");
   return `${letter}${digits}`;
 }
 
@@ -126,7 +151,7 @@ function extractScaledPixels(image, size, keepAspect) {
 function buildPalette(pixels, count) {
   const samples = pixels.filter((pixel) => pixel.a > 0);
   if (!samples.length) {
-    return [{ hex: "#FFFFFF", r: 255, g: 255, b: 255 }];
+    return [{ label: "H1", hex: "#FFFFFF", r: 255, g: 255, b: 255 }];
   }
 
   const centroids = [];
@@ -185,14 +210,23 @@ function buildPalette(pixels, count) {
     });
   }
 
-  return centroids.map((color, index) => ({
-    id: index + 1,
-    label: makeCompactLabel(index),
-    hex: `#${rgbToHex(color.r, color.g, color.b)}`,
-    r: color.r,
-    g: color.g,
-    b: color.b,
-  }));
+  const chosen = [];
+  for (const centroid of centroids) {
+    let best = MARD_221_PALETTE[0];
+    let bestDistance = Infinity;
+    for (const color of MARD_221_PALETTE) {
+      const rgb = hexToRgb(color.hex);
+      const d = distance(centroid, rgb);
+      if (d < bestDistance && !chosen.some((entry) => entry.label === color.label)) {
+        bestDistance = d;
+        best = color;
+      }
+    }
+    const rgb = hexToRgb(best.hex);
+    chosen.push({ label: best.label, hex: best.hex, r: rgb.r, g: rgb.g, b: rgb.b });
+  }
+
+  return chosen;
 }
 
 function assignPalette(pixels, palette) {
