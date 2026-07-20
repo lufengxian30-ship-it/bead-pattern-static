@@ -3,6 +3,7 @@ const dropzone = document.getElementById("dropzone");
 const sizeSelect = document.getElementById("sizeSelect");
 const colorCountSelect = document.getElementById("colorCount");
 const preserveAspect = document.getElementById("preserveAspect");
+const clarityOptimize = document.getElementById("clarityOptimize");
 const generateBtn = document.getElementById("generateBtn");
 const downloadPatternBtn = document.getElementById("downloadPatternBtn");
 const downloadLegendBtn = document.getElementById("downloadLegendBtn");
@@ -120,6 +121,7 @@ function extractScaledPixels(image, size, keepAspect) {
   const source = createOffscreenCanvas(size, size);
   const sourceCtx = source.getContext("2d");
   sourceCtx.clearRect(0, 0, size, size);
+  sourceCtx.imageSmoothingEnabled = false;
 
   if (keepAspect) {
     const scale = Math.max(size / image.width, size / image.height);
@@ -145,6 +147,41 @@ function extractScaledPixels(image, size, keepAspect) {
       });
     }
   }
+  return pixels;
+}
+
+function extractClarityPixels(image, size, keepAspect) {
+  const source = createOffscreenCanvas(image.width, image.height);
+  const sourceCtx = source.getContext("2d");
+  sourceCtx.imageSmoothingEnabled = false;
+  sourceCtx.drawImage(image, 0, 0);
+  const imageData = sourceCtx.getImageData(0, 0, image.width, image.height).data;
+  const pixels = [];
+
+  const scale = keepAspect ? Math.max(size / image.width, size / image.height) : size / Math.min(image.width, image.height);
+  const drawWidth = keepAspect ? image.width * scale : size;
+  const drawHeight = keepAspect ? image.height * scale : size;
+  const offsetX = keepAspect ? (size - drawWidth) / 2 : 0;
+  const offsetY = keepAspect ? (size - drawHeight) / 2 : 0;
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const srcX = keepAspect
+        ? Math.min(image.width - 1, Math.max(0, Math.round((x - offsetX + 0.5) / scale)))
+        : Math.min(image.width - 1, Math.max(0, Math.round((x + 0.5) * image.width / size)));
+      const srcY = keepAspect
+        ? Math.min(image.height - 1, Math.max(0, Math.round((y - offsetY + 0.5) / scale)))
+        : Math.min(image.height - 1, Math.max(0, Math.round((y + 0.5) * image.height / size)));
+      const idx = (srcY * image.width + srcX) * 4;
+      pixels.push({
+        r: imageData[idx],
+        g: imageData[idx + 1],
+        b: imageData[idx + 2],
+        a: imageData[idx + 3],
+      });
+    }
+  }
+
   return pixels;
 }
 
@@ -440,7 +477,9 @@ async function generatePattern() {
   }
 
   updateStatus("正在生成图纸...");
-  const pixels = extractScaledPixels(state.image, state.gridSize, preserveAspect.checked);
+  const pixels = clarityOptimize.checked
+    ? extractClarityPixels(state.image, state.gridSize, preserveAspect.checked)
+    : extractScaledPixels(state.image, state.gridSize, preserveAspect.checked);
   const palette = buildPalette(pixels, state.colorCount);
   const assigned = assignPalette(pixels, palette);
 
@@ -531,6 +570,10 @@ colorCountSelect.addEventListener("click", (event) => {
 });
 
 preserveAspect.addEventListener("change", () => {
+  if (state.image) generatePattern();
+});
+
+clarityOptimize.addEventListener("change", () => {
   if (state.image) generatePattern();
 });
 
